@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="MobileOptimized" content="320" />
+		<title></title>
+		<script src="js/common.js"></script>
+		<script type="text/javascript">
+			var add1="30";
+			var add2="30";
+			var deviceId;
+			var dname;
+			var serviceId = "69400001-b5a3-f393-e0a9-e50e24dcca99";//设备服务UUID
+			var characteristicId = "69400002-b5a3-f393-e0a9-e50e24dcca99";//写入特征值
+			var rcharacteristicId = "69400003-b5a3-f393-e0a9-e50e24dcca99";//通知特征值
+			var bconnect = false;
+			var AllDataflag=0;//0表示未开始,1表示收到7e开头,2表示收到0d结尾
+			//var firstConnect=true;
+			var start=false;//是否开始读取数据
+			var count=0;
+			var receiveFlag=false;
+			document.addEventListener('plusready', function() {
+				//放开
+				plus.key.addEventListener('backbutton', function(){
+					disconnectDevice();
+					closeBluetooth();
+					window.open('searchBleDeviceList.html?did='+deviceId+'&dname='+dname);
+				},false);
+				plus.bluetooth.createBLEConnection({
+					deviceId: deviceId,
+					success: function(e){
+						document.getElementById("devicetitle").innerHTML+="连接的设备是："+deviceId;
+					},
+					fail: function(e){
+						document.getElementById("devicetitle").innerHTML+="未连接的设备是："+deviceId;
+					}
+				});
+				// plus.android.importClass()
+				//放开
+				plus.bluetooth.onBLEConnectionStateChange(function(e){
+					console.log('onBLEConnectionStateChange: ' + JSON.stringify(e));
+					if(deviceId == e.deviceId){	// 更新连接状态
+						bconnect = e.connected;
+						//if(bconnect && firstConnect){
+						if(bconnect){
+							readValue();
+							document.getElementById('readvalue').value = "";
+							//firstConnect=false;
+							//clearInterval(t1);
+						}
+					}
+				 });
+				 //readValue();
+				plus.bluetooth.onBLECharacteristicValueChange(function(e){
+					console.log('onBLECharacteristicValueChange: '+JSON.stringify(e));
+					var value = buffer2hex(e.value);
+					console.log('value(hex) = '+value);
+					//if(rcharacteristicId == e.characteristicId){
+					// 更新到页面显示
+					receiveFlag=true;
+					document.getElementById('readvalue').value += value;
+					if(AllDataflag==2){//都收完了再解析
+						analyze(document.getElementById('readvalue').value);
+					}
+					//}
+				});
+
+			});
+			document.addEventListener("pause",function(){
+				disconnectDevice();
+				closeBluetooth();
+			});
+			document.addEventListener("resume",function(){
+				openBluetooth();
+				connectDevice();
+			});
+			/*
+			document.addEventListener("trimmemory",function(){
+				plus.bluetooth.closeBLEConnection({
+					deviceId: deviceId,
+					success: function(e){
+						//document.getElementById("devicetitle").innerHTML+="断开的设备是："+deviceId;
+					},
+					fail: function(e){
+					}
+				});
+			});*/
+			function selectCMD(){
+				var obj = document.getElementById("selCMD");
+				var index = obj.selectedIndex;
+				var s=obj.options[index].value.replace("xx",add1).replace("yy",add2);
+				document.getElementById('writevalue').value=s;
+			}
+			function getDeviceId() {
+				var url = location.search; //获取url中"?"符后的字串 
+				if (url.indexOf("?did=") != -1) {
+					var str=url.substr(1).split("&");
+					console.log("str======"+str[0]);
+					deviceId=str[0].split("=")[1];
+					dname=str[1].split("=")[1];
+					//document.getElementById("devicetitle").innerHTML=deviceId+","+dname;
+				}
+			}
+			// function sleep(numberMillis) {
+			// 	var now = new Date();
+			// 	var exitTime = now.getTime() + numberMillis;
+			// 	while (true) {
+			// 		now = new Date();
+			// 		if (now.getTime() > exitTime)
+			// 		return;
+			//     }
+			// }
+			function sendtoBLE(cmd){
+				if(!bconnect){
+					openBluetooth();
+					connectDevice();
+				}
+				str2ArrayBuffer(cmd, function(buffer){
+					plus.bluetooth.writeBLECharacteristicValue({
+						deviceId: deviceId,
+						serviceId: serviceId,
+						characteristicId: characteristicId,
+						value: buffer,
+						success: function(e){
+							console.log("success"+cmd);
+							while(!receiveFlag){
+								//sleep(1000);
+								if(count>=3){
+									return;
+								}else{
+									disconnectDevice();
+									closeBluetooth();
+									openBluetooth();
+									connectDevice();
+									count++;
+									sendtoBLE(cmd);
+								}
+							}
+							/*var t1=setInterval(function(){
+								disconnectDevice();
+								closeBluetooth();
+								openBluetooth();
+								connectDevice();
+								if(count>=10){
+									count=0;
+									clearInterval(t1);
+								}else{
+									count++;
+									sendCMD();
+								}
+							},100);*/
+						},
+						fail: function(e){
+							console.log("fail+"+cmd);
+						}
+					});
+				});
+			}
+			function sendCMD(){
+				count=0;
+				receiveFlag=false;
+				var str=document.getElementById('writevalue').value;
+				//var str="7E 32 30 30 31 34 30 35 30 30 30 30 30 46 44 42 34 0D";
+				var char1=str.split(" ");
+				var cmd="";
+				for(var i in char1){
+					cmd=cmd+String.fromCharCode(parseInt(char1[i],16));
+				}
+				// 转换为ArrayBuffer写入蓝牙
+				sendtoBLE(cmd);
+			}
+			
+			function str2ArrayBuffer(s,f) {
+			    var b = new Blob([s],{type:'text/plain'});
+			    var r = new FileReader();
+			    r.readAsArrayBuffer(b);
+			    r.onload = function(){if(f)f.call(null,r.result)}
+			}
+			function buffer2hex(value){
+				var t="";
+				if(value){
+					var v=new Uint8Array(value);
+					
+					for(var i in v){
+						//var x='0x'+v[i].toString(16);
+						var x=v[i].toString(16);
+						//if(x=='0x7e'){
+						if(x=='7e'){
+							start=true;
+							AllDataflag=1;//收到7e开头;
+						}
+						if(start){
+							//t += x+' ';
+							
+							if(x=="d"){
+								t+="0"+x;
+							}else{
+								t+=x;
+							}
+							//if(x=='0x0d'){
+							if(x=="d"){
+								start=false;
+								AllDataflag=2;//收到0d结尾
+								return t;
+							}
+						}
+					}
+				}else{
+					//t='无效值';
+				}
+				return t;
+			}
+			
+			function readValue(){
+				// 监听低功耗蓝牙设备的特征值变化 
+				plus.bluetooth.notifyBLECharacteristicValueChange({
+					deviceId: deviceId,
+					serviceId: serviceId,
+					characteristicId: rcharacteristicId,
+					success: function(e){
+						console.log('characteristicId: '+rcharacteristicId);
+					},
+					fail: function(e){
+						console.log('llllllllllllllll: ');
+						readValue();
+					}
+					
+				});
+				//console.log("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+			}
+			function analyze(recString){
+				//recString="7e32303031343030303330373630303031303235374534303030303030303043333530303830303030303030303030303030303030303030303030303030303030464646464646464630303030303030303030303030303030303030303030303030303030303030303038303030303030303030303030303030303030303030303030453638360d";
+				var obj = document.getElementById("selCMD");
+				var index = obj.selectedIndex;
+				var index7E = recString.indexOf("7e");
+				var index0D = recString.indexOf("0d");
+				if (index7E != -1 && index0D != -1) {
+					var cmd = recString.substring(index7E + 2, index0D);
+					var b = analyzeReciprocity(cmd);
+					var ifTrue = calibration(cmd);
+					if(ifTrue){
+						console.log("receive======="+recString);
+						var byteData = new Array( b[9], b[10], b[11] );//计算长度
+						var dataLength = ascToString(byteData,3);
+						var intLength=parseInt(dataLength,16);
+						var b2 = new Array(intLength);
+						if (b.length > 12 + intLength) {
+							for (var j = 0; j < intLength; j++) {
+								b2[j] = b[j + 12];
+							}
+							if(index==0){//获取地址
+								add1=b[2].toString(16);//0x30
+								add2=b[3].toString(16);//0x31
+								var a = new Array( b[2], b[3] );
+								var tmp=ascToString(a,2);
+								var add=parseInt(tmp,16);
+								AllDataflag=0;
+								document.getElementById('readvalue').value="";
+								document.getElementById('addr').value=""+add;
+								return ;
+							}
+							console.log("length="+b2.length);
+							b2=AscToHex2(b2, b2.length);
+							var bb = Data_Close(b2, b2.length);
+							
+							if(index==1){
+								var aV = BytesParseUnsignedInt(bb[4], bb[3]);//((bb[4]) & 0xFF | (bb[3] & 0xFF) << 8);// 输入相电压 AB/A
+								var bV = BytesParseUnsignedInt(bb[6], bb[5]);//((bb[6]) & 0xFF | (bb[5] & 0xFF) << 8);// 输入相电压 BC/B
+								var cV = BytesParseUnsignedInt(bb[8], bb[7]);//((bb[8]) & 0xFF | (bb[7] & 0xFF) << 8);// 输入相电压CA/C
+								var zdn= BytesParseUnsignedIntToLong(bb[26], bb[27],bb[28], bb[29]);//当前有功总电能（单相）BytesParseInt
+								document.getElementById('inputVA').value=(aV/100).toFixed(2);
+								document.getElementById('inputVB').value=(bV/100).toFixed(2);
+								document.getElementById('inputVC').value=(cV/100).toFixed(2);
+								document.getElementById('inputPower').value=(zdn/1000).toFixed(2);
+							}else if(index==2){
+								var V = BytesParseInt(bb[2], bb[1]);//整流器输出电压
+								document.getElementById('inputV').value=(V/100).toFixed(2);
+							}else if(index==3){
+								document.getElementById('dcPower').value="";
+								var num=bb[3];//分路数量
+								console.log("num==="+num);
+								var start=4;//分路电流开始位置
+								for(var i=0;i<num;i++){
+									var bV = BytesParseInt(bb[start+1], bb[start]);//第n路电流
+
+									var cV =BytesParseUnsignedIntToLong(bb[start+2], bb[start+3],bb[start+4], bb[start+5]);// 第n路电量
+
+									document.getElementById('dcPower').value+=(cV/100).toFixed(2)+";";
+									start=start+7;//间隔一个p
+								}
+							}else if(index==4){
+								document.getElementById('recState').value="";
+								var num=bb[1];//模块数量
+								console.log("num==="+num);
+								for(var i=0;i<num;i++){
+									var openOrClose=bb[2+i*5];//开关机状态
+									if (openOrClose == 00) {
+										document.getElementById('recState').value+="开机;";
+									} else {
+										document.getElementById('recState').value+="关机;";
+									}
+								}
+								
+							}else if(index==5){
+							//	document.getElementById('cutoff').value="";
+								var switchM = bb[7];//熔丝开关数量
+								var powerCut=bb[9+switchM];//停电
+								if (powerCut == 128) {//80H
+									document.getElementById('cutoff').value="系统停电";
+								} else {
+									document.getElementById('cutoff').value="正常";
+								}
+							}
+						}
+					}
+				}
+				AllDataflag=0;
+				document.getElementById('readvalue').value="";
+			}
+			function connectDevice(){
+				plus.bluetooth.createBLEConnection({
+					deviceId: deviceId,
+					success: function(e){
+						console.log("reconnect Device OK!did="+deviceId);
+					},
+					fail: function(e){
+						console.log("reconnect Device fail!");
+					}
+				});
+			}
+			function disconnectDevice(){
+				plus.bluetooth.closeBLEConnection({
+					deviceId: deviceId,
+					success: function(e){
+						console.log("disconnect Device OK!did="+deviceId);
+					},
+					fail: function(e){
+						console.log("disconnect Device fail!");
+					}
+				});
+			}
+			
+			// 关闭蓝牙
+			function closeBluetooth(){
+				plus.bluetooth.closeBluetoothAdapter({
+					success: function(e){
+						console.log("close Device OK!");
+						bconnect = false;
+					},
+					fail: function(e){
+						console.log("close Device fail!");
+					}
+				});
+			}
+			function openBluetooth(){
+				plus.bluetooth.openBluetoothAdapter({
+					success: function(e){
+						console.log("open OK");
+					},
+					fail: function(e){
+						console.log("open fail");
+					}
+				});
+			}
+			
+		function analyzeReciprocity(hex) {//hex2byte
+			var b = []; 
+			if (hex.length % 2 != 0) {
+				return "";
+			}
+			var arr=hex.split("");
+			var l=hex.length;
+			for(var i=0,j=0;i<l;i++,j++){
+				var swap = "" + arr[i++] + arr[i];
+				var byteint=parseInt(swap,16) & 0xff;
+				b[j]=byteint;
+			}
+			return b;
+		}
+		
+		function calibration(cmd){//ifchecksum
+			var b=analyzeReciprocity(cmd);
+			var noCheck=[];
+			var check=[];
+			check[0]=b[b.length-4];
+			check[1]=b[b.length-3];
+			check[2]=b[b.length-2];
+			check[3]=b[b.length-1];
+			for (var i = 0; i < b.length-4; i++) {
+				noCheck[i]=b[i];
+			}
+			var jisuanCheckByte = CheckSum_Add(noCheck, noCheck.length);
+			var s1=ascToString(jisuanCheckByte,jisuanCheckByte.length);
+			var s2=ascToString(check,check.length);
+			if(s1==s2){
+				return true;
+			}else{
+				return false;
+			}
+		}
+		
+		function CheckSum_Add(check_buf,len){
+			var sum=0;
+			var check_b0=[];
+			for(var i=0;i<len;i++){
+				sum+=check_buf[i];
+			}
+			sum=~(sum%0x10000)+1;
+			check_b0[0] = (sum & 0xf000) >> 12;
+			check_b0[1] = (sum & 0x0f00) >> 8;
+			check_b0[2] = (sum & 0x00f0) >> 4;
+			check_b0[3] = sum & 0x000f;
+			check_b0=HexToAsc(check_b0,4);
+			return check_b0;
+		}
+		
+		function HexToAsc(hex,len){
+			for (var i = 0; i < len / 2; i++) {
+				if (hex[2 * i] > 9) {
+					hex[2 * i] += 55;
+				} else {
+					hex[2 * i] += 48;
+				}
+				if (hex[2 * i + 1] > 9) {
+					hex[2 * i + 1] += 55;
+				} else {
+					hex[2 * i + 1] += 48;
+				}	
+			}
+			return hex;
+		}
+		function ascToString(ascArr,len){//asc数组转字符串
+			for(var i=0;i<len;i++){
+				ascArr[i]=String.fromCharCode(ascArr[i]);
+			}
+			return ascArr.join('');
+		}
+		function AscToHex2(asc, len){
+			for (var i = 0; i < len / 2; i++){
+				if (asc[2 * i] > 'Z'.charCodeAt()){
+					asc[2 * i] -= 87;
+				}else{
+					if (asc[2 * i] > '9'.charCodeAt()){
+						asc[2 * i] -= 55;
+					}else{
+						asc[2 * i] -= 48;
+					}
+				}
+				if (asc[2 * i + 1] > 'Z'.charCodeAt()){
+					asc[2 * i + 1] -= 87;
+				}else{
+					if (asc[2 * i + 1] > '9'.charCodeAt()){
+						asc[2 * i + 1] -= 55;
+					}else{
+						asc[2 * i + 1] -= 48;
+					}
+				}
+			}
+			return asc;
+		}
+		function Data_Close(data_bef, len_bef){
+			var b = new Array(len_bef / 2);
+			var data_bef0 = 0;
+			var data_bef1 = 0;
+			for (var i = 0; i < len_bef / 2; i++){
+				data_bef0 = data_bef[i * 2] << 4;
+				data_bef1 = data_bef[i * 2 + 1];
+				b[i] = (data_bef0 | data_bef1);
+				if(b[i]>127){
+					b[i]=b[i]-256;
+				}
+			}
+			for (i = len_bef / 2; i < len_bef; i++){
+				data_bef[i] = 0;// *(data_bef + i) = 0;
+			}
+			return b;
+		}
+		/**
+		 * @param {Object}  low 低字节
+		 * @param {Object}  high 高字节
+		 * return 返回一个有符号的16位整数（取值范围在-32768 ~ 32767）
+		 */
+		function BytesParseInt(low,  high) {
+			if ((high & 0x80) == 0x00) {
+				return ((low & 0xFF) | (high & 0xFF) << 8);
+			} else {
+				var tmp=((low & 0xFF) | (high & 0xFF) << 8);
+				return  tmp-65536;
+			}
+		}
+		function BytesParseUnsignedInt(low,  high) {
+			return ((low & 0xFF) | (high & 0xFF) << 8);
+		}
+
+		function BytesParseUnsignedIntToLong(b, c, d, e) {
+			return ((e & 0xFF) | (d & 0xFF) << 8 | (c & 0xFF) << 16 | (b & 0xFF) << 24);
+		}
+		function BytesParseOneBit(high){
+			if((high & 0x80)==0x00){
+				return high & 0xFF;
+			}else{
+				var tmp=high & 0xFF;
+				return  tmp-128;
+			}
+		}
+ 		</script>
+		<link rel="stylesheet" href="css/common.css" type="text/css" charset="utf-8"/>
+	</head>
+	<body onload="getDeviceId()">
+		<div id='devicetitle'></div>
+		<select onchange="selectCMD()" id="selCMD">
+			<option value="7E 32 30 30 31 34 30 35 30 30 30 30 30 46 44 42 34 0D">获取设备地址(4050)</option>
+			<option value="7E 32 30 xx yy 34 30 34 32 45 30 30 32 46 46 46 44 31 30 0D">获取交流参数(4042)</option>
+			<option value="7E 32 30 xx yy 34 31 34 32 30 30 30 30 46 44 42 32 0D">获取整流参数(4142)</option>
+			<option value="7E 32 30 xx yy 44 38 34 32 45 30 30 32 46 46 46 43 46 38 0D">获取直流参数(D842)</option>
+			<option value="7E 32 30 xx yy 34 31 34 33 30 30 30 30 46 44 42 31 0D">获取开关机状态(4143)</option>
+			<option value="7E 32 30 xx yy 34 30 34 34 45 30 30 32 46 46 46 44 30 45 0D">获取断电状态(4044)</option>
+			<!--46 42目前没有(蓄电池组总电压，蓄电池组标称容量)-->
+		</select>
+		<div id='readresult'>
+		读取数据：<input id="readvalue" type="text" disabled="disabled" style="width:60%"></input>
+		</div>
+		<div id='writeresult'>
+			写入数据：<input id="writevalue" type="text" style="width:60%;-webkit-user-select:text" value="7E 32 30 30 31 34 30 35 30 30 30 30 30 46 44 42 34 0D"></input>
+		</div>
+		<div class="button" onclick="sendCMD()">发送数据</div>
+		<!--
+		<div class="button" onclick="connectDevice()">连接蓝牙设备</div>
+		<div class="button" onclick="disconnectDevice()">断开蓝牙设备</div>
+		<div class="button" onclick="openBluetooth()">初始化蓝牙模块</div>
+		<div class="button" onclick="closeBluetooth()">关闭蓝牙模块</div>-->
+		<!--<div class="button" onclick="analyze()">ceshi</div>-->
+		<div>设备地址：<input id="addr" type="text" disabled="disabled"></input></div>
+		<div>输入相电压A：<input id="inputVA" type="text" disabled="disabled"></input></div>
+		<div>输入相电压B：<input id="inputVB" type="text" disabled="disabled"></input></div>
+		<div>输入相电压C：<input id="inputVC" type="text" disabled="disabled"></input></div>
+		<div>输入电度：<input id="inputPower" type="text" disabled="disabled"></input></div>
+		<div>整流模块输出电压：<input id="inputV" type="text" disabled="disabled"></input></div>
+		<div>直流电度：<input id="dcPower" type="text" disabled="disabled"></input></div>
+		<div>模块开关机状态：<input id="recState" type="text" disabled="disabled"></input></div>
+		<div>输入电压断电告警：<input id="cutoff" type="text" disabled="disabled"></input></div>
+	</body>
+</html>

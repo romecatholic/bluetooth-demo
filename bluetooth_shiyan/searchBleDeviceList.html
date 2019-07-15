@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="MobileOptimized" content="320"/>
+		<title></title>
+		<script src="js/common.js"></script>
+		<script type="text/javascript">
+			var bds = []; // 可连接设备列表
+			var deviceId = null;
+			var dname=null;
+			document.addEventListener('plusready', function() {
+				//console.log("所有plus api都应该在此事件发生后调用，否则会出现plus is undefined。");
+				//var bl = plus.bluetooth.openBluetoothAdapter(); //初始化蓝牙设备;
+				plus.key.addEventListener('backbutton', function(){
+					closeBluetooth();
+					window.open('index.html');
+				},false);
+				plus.bluetooth.onBluetoothDeviceFound(function(e) {
+					var devices = e.devices;
+					console.log('onBluetoothDeviceFound: ' + devices.length);
+					var devicelist = document.getElementById("devicelist");
+					for (var i in devices) {
+						//document.getElementById('output').innerText+=JSON.stringify(devices[i])+"\n";
+						JSON.stringify(devices[i]);
+						//plus.nativeUI.toast(json.advertisServiceUUIDs);
+						var device = devices[i];
+						var dname=device.localName;
+						if(dname=='' || dname==null){
+							dname=device.deviceId;
+						}
+						devicelist.innerHTML+="<li><div class='button' onclick='selectDevice(\""+device.deviceId+"\",\""+dname+"\")'>"+dname+"</div></li>";
+						if (device.deviceId ) {
+							//console.log(JSON.stringify(device));
+							bds.push(device);
+						}
+					}
+				});
+				startDiscovery();
+				//getDeviceId();
+			});
+			// 重设数据 
+			function resetDevices(d, s) {
+				d || (bds = [], deviceId = null);
+				s || (bss = [], serviceId = null);
+				bscs = [], bscws = [], characteristicId = null, wcharacteristicId = null;
+				document.getElementById("devicelist").innerHTML="";
+			}
+			function startDiscovery() {
+				resetDevices();
+				plus.bluetooth.openBluetoothAdapter({
+					success: function(e){
+						plus.bluetooth.startBluetoothDevicesDiscovery({
+							success: function(e) {
+								
+							},
+							fail: function(e) {
+							}
+						});
+					},
+					fail: function(e){
+						//outLine('打开失败! '+JSON.stringify(e));
+					}
+				});
+				
+			}
+			function stopDiscovery(){
+				plus.bluetooth.stopBluetoothDevicesDiscovery({
+					success: function(e){
+					},
+					fail: function(e){
+					}
+				});
+			}
+			// 选择蓝牙设备 
+			function selectDevice(id,dname){
+				deviceId = id;
+				dname=dname;
+				stopDiscovery();
+				window.open('testSendBlueTooth.html?did='+deviceId+'&dname='+dname);
+			}
+			// 关闭蓝牙
+			function closeBluetooth(){
+				plus.bluetooth.closeBluetoothAdapter({
+					success: function(e){
+						console.log("close Device OK!");
+					},
+					fail: function(e){
+						console.log("close Device fail!");
+					}
+				});
+			}
+			function getDeviceId() {
+				var url = location.search; //获取url中"?"符后的字串 
+				if (url.indexOf("?did=") != -1) {
+					var str=url.substr(1).split("&");
+					deviceId=str[0].split("=")[1];
+					dname=str[1].split("=")[1];
+					devicelist.innerHTML+="<li><div class='button' onclick='selectDevice(\""+deviceId+"\",\""+dname+"\")'>"+dname+"</div></li>";
+				}
+			}
+		</script>
+		<link rel="stylesheet" href="css/common.css" type="text/css" charset="utf-8"/>
+	</head>
+	<body>
+		<div id="output">
+		Bluetooth用于管理蓝牙设备，搜索附近蓝牙设备、连接实现数据通信等。
+		</div>
+		<ul id="devicelist" class="dlist" style="text-align:left;">
+			
+		</ul>
+	</body>
+</html>
